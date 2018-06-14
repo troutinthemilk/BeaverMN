@@ -13,4 +13,4 @@ Requires R and JAGS
 
 ## Acknowledgments
 
-The beavers# Integrated-Foodwebs
+The beavers

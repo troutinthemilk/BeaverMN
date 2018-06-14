@@ -9,8 +9,8 @@ Requires R and JAGS
 ## Authors
 
 * Sean Johnson-Bice 
-* [Jake Ferguson](troutinthemil@gmail.com) 
+* Jake Ferguson 
 
 ## Acknowledgments
 
-The beavers
+The beavers# Integrated-Foodwebs

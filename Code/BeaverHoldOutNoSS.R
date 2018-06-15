@@ -12,8 +12,9 @@ library(coda)
 curr.hyp		<- 'notall' #hypotheses as denoted by sean
 SS 				<- F
 PDSI 			<- T
-holdout.prop	<- 0.0#0.25
+holdout.prop	<- 0.5 #0.25
 
+##hypotheses specified by sean
 #1. Dispersal @2y/o; winter affects reproduction; rainfall/May temp affects reproduction.
 #Tmp.wint (lag 2); tmax.5, ppt.grow, ppt.fall (all lag 3); harvest (lag 1); wolf presence (no lag); habitat, ppt.grow (lag 0)
 #2. Dispersal @2y/o; winter affects juvenile survival; rainfall/May temp affects reproduction.
@@ -198,11 +199,11 @@ if(SS) {
 	par.est	<- c('a', 'sigmaInt', 'b', 'b2', 'b3', 'sigmaSlope', 'sigObs', 'lambdaEnv', 'lambdaHar', 'lambdaObs', 'betaEnv', 'betaHar', 'Xtrue', 'Xpred', 'aRE')
 	jags.fit  		<- jags(model.file='BeaverSSmodels.jags', n.iter=1e4, n.chains=4, data=datTable, inits=initTable, parameters.to.save=par.est)
 } else {
-	par.est	<- c('a', 'sigmaInt', 'b', 'b2', 'sigmaSlope', 'sigInt', 'sigObs', 'lambdaEnv', 'lambdaHar', 'lambdaObs', 'betaEnv', 'betaHar', 'Xpred', 'aRE')
+	par.est	<- c('a', 'sigmaInt', 'b', 'sigmaSlope', 'betaEnv', 'Xpred', 'aRE')
 	jags.fit  		<- jags(model.file='Beavermodels.jags', n.iter=1e4, n.chains=4, data=datTable, inits=initTable, parameters.to.save=par.est)
 }
 
-jags.fit 		<- update(jags.fit, n.iter=1e4, n.thin=1e2)
+jags.fit 		<- update(jags.fit, n.iter=1e6, n.thin=1e2)
 #dic.samples(jagsfit.upd$model, n.iter=1e4, type="pD")
 #jags.fit 		<- recompile(jags.fit)
 #jags.fit 		<- autojags(jags.fit, n.iter=1e4, n.thin=100, n.update=100)
@@ -265,22 +266,22 @@ MCMCplot(jags.fit.mcmc, params="betaEnv", main="Environmental covariates", ref_o
 #MCMCplot(jags.fit.mcmc, params="betaHar", labels="Harvest:veh_dens", main="Interaction covariates")
 #MCMCplot(jags.fit.mcmc, params="betaObs", labels=dimnames(observCov.mat)[[2]], main="Observation variance covariates")
 
-X11()
-MCMCtrace(jags.fit.mcmc, params = c('lambda'), ISB=FALSE, ind=TRUE, pdf=FALSE)
-X11()
-MCMCtrace(jags.fit.mcmc, params = c('a', 'b', 'b2'), ISB=TRUE, ind=TRUE, pdf=FALSE)
+#X11()
+#MCMCtrace(jags.fit.mcmc, params = c('lambda'), ISB=FALSE, ind=TRUE, pdf=FALSE)
+#X11()
+#MCMCtrace(jags.fit.mcmc, params = c('a', 'b', 'b2'), ISB=TRUE, ind=TRUE, pdf=FALSE)
 
 #stop()
-if(SS) {
+#if(SS) {
 	if(PDSI) {
 		#next()
 		save.image(file=paste("BeaverGompSS_QuarterHoldout_PDSI_Holdout", holdout.prop, ".Rdata", sep=''))
 	} else {
 		#save.image(file=paste("BeaverGompSS_QuarterHoldout_PPT_", curr.hyp, ".Rdata", sep=''))
 	}
-} else {
+# else {
 	#save.image(file=paste("BeaverGomp_Hyp", curr.hyp, ".Rdata", sep=''))
-}
+#}
 
 #plot(Xpred[holdout.indices,i], Xpred[holdout.indices,i] - Xpred.nocov[holdout.indices,i], pch=19); points(Xpred.best[holdout.indices,i], Xpred.best[holdout.indices,i] - Xpred[holdout.indices,i], pch=19, col='red'); abline(a=0, b=0)
 

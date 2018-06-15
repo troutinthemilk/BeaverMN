@@ -4,11 +4,9 @@ model {
 
 	for(i in 1:NumPops) {
 		#generate unobserved true states (Xtrue)
-		#Xpred[init.index[i], i] ~ dunif(-5, 2) # We don't know this value and it doesn't matter just guess something reasonable
 		Xpred[init.index[i], i] 	<- lD[init.index[i],i] 
-		Xpred[init.index[i]+1, i] 	<- lD[init.index[i]+1,i] 
-		for(j in (init.index[i]+2):(final.index[i]-holdout.obs[i])) {
-			Xpred[j, i] <- a + aRE[i] + lD[j-1,i] + (b)*(lD[j-1,i]) + (b2)*(lD[j-2,i]) + inprod(EnvCov.array[j,,i], betaEnv) #predict the mean of next observation based on last true valu  
+		for(j in (init.index[i]+1):(final.index[i]-holdout.obs[i])) {
+			Xpred[j, i] <- a + aRE[i] + lD[j-1,i] + (b)*(lD[j-1,i]) + inprod(EnvCov.array[j,,i], betaEnv) #predict the mean of next observation based on last true valu  
 			
 			lD[j, i] 	~  dnorm(Xpred[j, i], tauProc[i]) 
 		}
@@ -17,38 +15,25 @@ model {
 	#these are the priors
 	a 			~ dnorm(0, 1/10) 
 	b 			~ dunif(-4, 2)
-	b2 			~ dunif(-2, 2)
-	doubleBias 	~ dnorm(0, 1/10)
+	
 	#random effects in density dependence
 	for(i in 1:NumPops) {
 		aRE[i] 			~ dnorm(0, 1/sigmaInt^2)   #dunif(-4, 2)
-		bRE[i] 			~ dnorm(0, 1/sigmaSlope^2) #dunif(-4, 2)
-		sig[i] 			~ dgamma(0.1, 0.1)
 	}
 
 	sigmaInt 	~ dgamma(0.1, 0.1)
-	sigmaSlope 	~ dgamma(0.1, 0.1)
 	
-	#hierarchical error variances
-	sigObs 	<- 1e-6 #~ dnorm(0, 0.01)
-	sigInt  ~ dnorm(0, 0.1)
-
 	for(i in 1:NumPops) {
 		tauProc[i] 		~ dgamma(0.01, 0.01)
 	}
 
-	betaHar ~ ddexp(0, lambdaHar) #added offset to prevent numerical error
 	for(i in 1:NumEnvVars) {
 		tauPrior[i]	~ dgamma(0.01, 0.01)
 		betaEnv[i]  ~ dnorm(0, tauPrior[i])
+
 		#betaEnv[i] ~ ddexp(0, tauPrior[i]) #added offset to prevent numerical error
 		#betaEnv[i] ~ ddexp(0, lambdaEnv)
 		#betaEnv[i] ~ dnorm(0, lambdaEnv)
 	}
-  	
-  	
-  	#lambdaObs 	~ dunif(0.01, 1000) 
-  	lambdaHar 	~ dunif(0.01, 1000) 
-  	lambdaEnv 	~ dunif(0.01, 10000)  
-	
+  		
 }

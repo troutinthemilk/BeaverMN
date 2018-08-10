@@ -1,0 +1,452 @@
+---
+title: "Summary of current Beaver population dynamics models"
+author: "Jake Ferguson and Sean Johnson-Bice"
+date: "June 20, 2018"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, echo=F}
+extractPars <- function(jags.fit.summ) {
+
+  names.vec <- dimnames(jags.fit.summ)[[1]]
+  a <- jags.fit.summ[which(names.vec=="a"),1]
+  a.sd <- jags.fit.summ[which(names.vec=="a"),2]
+  b <- jags.fit.summ[which(names.vec=="b"),1]
+  b.sd <- jags.fit.summ[which(names.vec=="b"),2]
+  
+  aRE.vec  <- vector('numeric', 15)
+  beta.vec <- vector('numeric', 12)
+  for(i in 1:dim(EnvCov.array)[[2]]) {
+  	beta.vec[i] <- jags.fit.summ[which(names.vec==paste("betaEnv[",i,"]",sep='')), 1]
+  }
+  
+  for(i in 1:15) {
+  	aRE.vec[i] <- jags.fit.summ[which(names.vec==paste("aRE[",i,"]",sep='')), 1]
+  }
+
+  return(list(a=a, a.sd=a.sd, b=b, b.sd=b.sd, aRE=aRE.vec, beta=beta.vec))  
+}
+
+#jags.mat <- jags.fit$BUGSoutput$sims.list
+extractParsFull <- function(jags.mat) {
+
+  names.vec <- dimnames(jags.mat)[[2]]
+  names.vec <- names(jags.fit$BUGSoutput$sims.list)
+  
+  a     <- jags.mat[[which(names.vec=="a")]]
+  b     <- jags.mat[[which(names.vec=="b")]]
+  
+  aRE   <- jags.mat[[which(names.vec=="aRe")]]
+  betaEnv <- jags.mat[[which(names.vec=="betaEnv")]]
+  
+  return(list(a=a,b=b, aRE=aRE, beta=betaEnv))  
+}
+
+mse.calc <- function(parList, X, holdout.obs, final.index) {
+  
+  mse.vec <- vector('numeric', 15)
+  
+  for(i in 1:15) {
+  
+  	holdout.indices <- (final.index[i]-holdout.obs[i]):final.index[i]
+  	pred.start <- (final.index[i]-holdout.obs[i])-1
+  
+  	pred.val <- vector('numeric', length(holdout.indices))
+  	for(j in 1:length(holdout.indices)) {
+  	  
+  		pred.val[j] <- X[holdout.indices[j]-1,i] + parList$a + parList$aRE[i] + parList$b*X[holdout.indices[j]-1,i] + sum(parList$beta*EnvCov.array[holdout.indices[j],,i])
+  		
+  		if(is.na(pred.val[j])) {
+  			if(j == 1) {next()}
+  			pred.val[j] <- pred.val[j-1] + parList$a + parList$aRE[i] + b*pred.val[j-1] + sum(parList$beta*EnvCov.array[holdout.indices[j],,i])
+  		}
+  	}
+  
+  	mse.vec[i] <- sum(abs(exp(X[holdout.indices,i]) - exp(pred.val)), na.rm=T)
+  	
+  }
+  return(mse.vec)
+}
+
+
+extractParsHier <- function(jags.fit.summ) {
+
+  names.vec <- dimnames(jags.fit.summ)[[1]]
+  a     <- jags.fit.summ[which(names.vec=="a"),1]
+  a.sd  <- jags.fit.summ[which(names.vec=="a"),2]
+  b     <- jags.fit.summ[which(names.vec=="b"),1]
+  b.sd  <- jags.fit.summ[which(names.vec=="b"),2]
+  
+  aRE.vec  <- vector('numeric', 15)
+  betaNum  <- sum(startsWith(names.vec, "betaEnv["))
+  beta.vec <- vector('numeric', betaNum)
+  betaRE.mat <- matrix(NA, betaNum, 15)
+  
+  for(i in 1:betaNum) {
+  	beta.vec[i] <- jags.fit.summ[which(names.vec==paste("betaEnv[",i,"]",sep='')), 1]
+  	for(j in 1:15) {
+  	  betaRE.mat[i,j] <- jags.fit.summ[which(names.vec==paste("betaEnvRE[",i,",",j,"]",sep='')), 1]
+  	}
+  }
+  
+  for(i in 1:15) {
+  	aRE.vec[i] <- jags.fit.summ[which(names.vec==paste("aRE[",i,"]",sep='')), 1]
+  }
+
+  return(list(a=a, a.sd=a.sd, b=b, b.sd=b.sd, aRE=aRE.vec, beta=beta.vec, betaRE=betaRE.mat))  
+}
+
+
+mseHier.calc <- function(parList, X, holdout.obs, final.index) {
+  
+  mse.vec <- vector('numeric', 15)
+  for(i in 1:15) {
+  
+  	holdout.indices <- (final.index[i]-holdout.obs[i]):final.index[i]
+  	pred.start <- (final.index[i]-holdout.obs[i])-1
+  
+  	pred.val <- vector('numeric', length(holdout.indices))
+  	for(j in 1:length(holdout.indices)) {
+  	  
+  		pred.val[j] <- X[holdout.indices[j]-1,i] + parList$a + parList$aRE[i] + parList$b*X[holdout.indices[j]-1,i] + sum((parList$beta + parList$betaRE[,j])*EnvCov.array[holdout.indices[j],,i])
+  		
+  		if(is.na(pred.val[j])) {
+  			if(j == 1) {next()}
+  			pred.val[j] <- pred.val[j-1] + parList$a + parList$aRE[i] + parList$b*pred.val[j-1] + sum((parList$beta + parList$betaRE[,j])*EnvCov.array[holdout.indices[j],,i])
+  		}
+  	}
+  
+  	mse.vec[i] <- sum(abs(exp(X[holdout.indices,i]) - exp(pred.val)), na.rm=T)
+  	
+  }
+  return(mse.vec)
+}
+
+
+ss.calc <- function(Xcurr, init.index) {
+  ss.vec <- vector('numeric', 15)
+  for(i in 1:15) {
+    ss.vec[i] <- sum(((log(Dens.mat[,i]) - Xcurr[,i])^2)[-init.index[i]], na.rm=T)
+  }
+  return(ss.vec)
+}
+
+```
+
+
+```{r, echo=F}
+library(kableExtra)
+library(coda)
+
+```
+
+
+```{r, echo=F}
+#############################
+#read in holdout 0.3 models##
+#############################
+
+load('/home/troutinthemilk/Desktop/BeaverOutput/BeaverGomp_PDSI_Holdout0.3_nocovs.Rdata')
+pars.nocovModel.holdout <- extractPars(jags.fit.summ)
+mse.nocovModel.holdout  <- mse.calc(parList=pars.nocovModel.holdout, X=log(Dens.mat), holdout.obs=holdout.obs, final.index=final.index)
+aNoCov.vec <- pars.nocovModel.holdout$a + pars.nocovModel.holdout$aRE
+
+
+load('/home/troutinthemilk/Desktop/BeaverOutput/BeaverGomp_PDSI_Holdout0.3.Rdata')
+pars.PDSIModel.holdout <- extractPars(jags.fit.summ)
+mse.PDSIModel.holdout  <- mse.calc(parList=pars.PDSIModel.holdout, X=log(Dens.mat), holdout.obs=holdout.obs, final.index=final.index)
+
+
+load('/home/troutinthemilk/Desktop/BeaverOutput/BeaverGomp_PPT_Holdout0.3.Rdata')
+pars.PPTModel.holdout <- extractPars(jags.fit.summ)
+mse.PPTModel.holdout  <- mse.calc(parList=pars.PPTModel.holdout, X=log(Dens.mat), holdout.obs=holdout.obs, final.index=final.index)
+
+
+load('/home/troutinthemilk/Desktop/BeaverOutput/BeaverGomp_NULL_Holdout0.3.Rdata')
+pars.NULLModel.holdout <- extractPars(jags.fit.summ)
+mse.NULLModel.holdout  <- mse.calc(parList=pars.NULLModel.holdout, X=log(Dens.mat), holdout.obs=holdout.obs, final.index=final.index)
+
+```
+
+
+```{r, echo=F}
+#read in holdout0 models
+
+load('/home/troutinthemilk/Desktop/BeaverOutput/BeaverGomp_NULL_Holdout0.Rdata')
+pars.NULLModel <- extractPars(jags.fit.summ)
+aNULL.vec <- pars.NULLModel$a + rep(0, 15)
+dic.NULL <- jags.fit$BUGSoutput$DIC
+Xpred.NULL <- Xpred
+ss.NULL <- ss.calc(Xpred.NULL, init.index)
+
+
+load('/home/troutinthemilk/Desktop/BeaverOutput/BeaverGomp_PDSI_Holdout0.Rdata')
+pars.PDSIModel.holdout <- extractPars(jags.fit.summ)
+aPDSI.vec <- pars.PDSIModel.holdout$a + pars.PDSIModel.holdout$aRE
+dic.PDSI <- jags.fit$BUGSoutput$DIC
+Xpred.PDSI <- Xpred
+jags.fit.mcmc.PDSI <- jags.fit.mcmc
+envVars.PDSI <- dimnames(EnvCov.array)[[2]]
+ss.PDSI <- ss.calc(Xpred.PDSI, init.index)
+rsq.PDSI <- 1 - sum(ss.PDSI)/sum(ss.NULL)
+
+load('/home/troutinthemilk/Desktop/BeaverOutput/BeaverGomp_PPT_Holdout0.Rdata')
+pars.PPTModel.holdout <- extractPars(jags.fit.summ)
+aPPT.vec <- pars.PPTModel.holdout$a + pars.PPTModel.holdout$aRE
+dic.PPT <- jags.fit$BUGSoutput$DIC
+Xpred.PPT <- Xpred
+jags.fit.mcmc.PPT <- jags.fit.mcmc
+envVars.PPT <- dimnames(EnvCov.array)[[2]]
+ss.PPT <- ss.calc(Xpred.PPT, init.index)
+rsq.PPT <- 1 - sum(ss.PPT)/sum(ss.NULL)
+
+
+load('/home/troutinthemilk/Desktop/BeaverOutput/BeaverGomp_PDSI_Holdout0_nocovs.Rdata')
+pars.nocovModel <- extractPars(jags.fit.summ)
+aNoCov.vec <- pars.nocovModel$a + pars.nocovModel$aRE
+dic.nocov <- jags.fit$BUGSoutput$DIC
+Xpred.nocov <- Xpred
+jags.fit.mcmc.nocov <- jags.fit.mcmc
+ss.nocov <- ss.calc(Xpred.nocov, init.index)
+rsq.nocov <- 1 - sum(ss.nocov)/sum(ss.NULL)
+
+
+```
+
+
+## The model
+
+We modeled the log-densities of beavers $\left( X=\ln(D) \right)$ using a Gompertz model. The standard interpretation of the Gompertz model is that there is an size-independent component of mortality as well as a component of mortality that increases exponentially with the size of the population (colony). For population $i$ in year $j$ with a vector of covariates ($\mathbf{Z}$) measured in year $j$ we modeled 
+
+$$
+\begin{aligned}
+X_{i,j} &= a + u_{i} + (1 - b) X_{i,j} + \boldsymbol{\beta} \mathbf{Z}_j + \varepsilon_{i,j} \\
+u_{i} &\sim \mathrm{Norm}\left(0,\, \sigma_a \right) \\
+\varepsilon_{i,j} &\sim \mathrm{Norm}\left(0,\, \sigma_i \right).
+\end{aligned}
+$$
+The intrinsic growth rate is given by $a$, the random effect $u_i$ allows this term to vary from population to population. The strength of density dependence is given by $b$, when $b=0$ the model is density independent. The effects of extrinsic covariates on population growth  are determined by the vector $\boldsymbol{\beta}$ and $\varepsilon_{i,j}$ is the extrinsic variability that is not otherwise accounted for in the model.
+
+The priors we used were (need to double check these)
+$$
+\begin{aligned}
+a &\sim \mathrm{Norm}(0,\, 10)\\
+\beta  &\sim \mathrm{Norm}(0, 10)\\
+b &\sim \mathrm{Unif}(-4,\,2)\\
+\sigma_a &\sim \mathrm{Unif}(0,\, 20)\\
+\sigma_i &\sim \mathrm{Unif}(0,\, 20)
+\end{aligned}
+$$
+
+## Model fits
+We fit our models in JAGS with a burnin of $10^4$ draws followed by $10^6$ draws from the posterior. We then thinned these draws by 100 for a total of $10^4$ posterior samples. Some aspects of model fits are described below:
+```{r plot_Gomp, out.width='100%', fig.asp=1.2, echo=FALSE, fig.cap="Gray lines are data, black lines are Gompertz model predictions, red lines are predictions of Gompertz with PDSI covariates, blue lines are predictions of Gompertz with PPT covariates."}
+
+par(mfrow=c(4,4)) 
+Year.vec <- as.numeric(dimnames(Dens.mat)[[1]])
+
+for(i in 1:NumPops) {
+	plot(Year.vec, Dens.mat[,i], type='l', pch=19, cex=0.75, xlab="Year", ylab="Density", cex.lab=1.4, main=routename.vec[i], col="darkgray")
+	lines(Year.vec, exp(Xpred.nocov[,i]), lwd=1)
+	lines(Year.vec, exp(Xpred.PPT[,i]), lwd=2, col=rgb(178, 34, 34, alpha=200, maxColorValue=255))
+	lines(Year.vec, exp(Xpred.PDSI[,i]), lwd=2, col=rgb(100, 149, 237, alpha=200, maxColorValue=255))
+	
+}
+
+```
+
+
+```{r plot_data, out.width='100%', fig.asp=1.2, echo=FALSE}
+pdf(file="BeaverTS.pdf", height=8, width=8)
+par(mfrow=c(2, 2)) 
+Year.vec <- as.numeric(dimnames(Dens.mat)[[1]])
+
+for(i in c(3,8,6,12)) {
+	plot(Year.vec, Dens.mat[,i], type='l', pch=19, cex=0.75, xlab="Year", ylab="Population density", cex.lab=1.4, main=routename.vec[i], col="darkgray", lwd=3)
+	lines(Year.vec, exp(Xpred.nocov[,i]), lwd=3)
+	#lines(Year.vec, exp(Xpred.PPT[,i]), lwd=2, col=rgb(178, 34, 34, alpha=200, maxColorValue=255))
+	lines(Year.vec, exp(Xpred.PDSI[,i]), lwd=4, col=rgb(100, 149, 237, maxColorValue=255))
+	
+}
+
+legend('topright', legend=c("Observations", "Gompertz model", "Gompertz + environment"), col=c("gray", "black", "cornflowerblue"), lwd=4, cex=1.4)
+
+graphics.off()
+```
+
+Below are the posterior estimates of environmental covariates.
+```{r, echo=F, fig.cap="Posterior distributions of the environmental covariates.", out.width='100%'}
+
+library(MCMCvis)
+
+
+par(mfrow=c(1,2))
+sort.vec <- c(1,10,11,12,2,3,4,5,6,7,8,9)
+MCMCplot(jags.fit.mcmc.PDSI, labels=envVars.PDSI[sort.vec], params="betaEnv", main="PDSI environmental covariates", ref_ovl=TRUE)
+
+MCMCplot(jags.fit.mcmc.PPT, labels=envVars.PPT[sort.vec], params="betaEnv", main="PPT environmental covariates", ref_ovl=TRUE)
+
+```
+
+
+The estimate of the average log-intrinsic growth rate across populations, $a$, (reported as mean (standard deviation)) is `r round(pars.nocovModel$a, 2)` (`r round(pars.nocovModel$a.sd, 2)`) and the strength of density dependence, $b$ is `r -round(pars.nocovModel$b, 2)` (`r round(pars.nocovModel$b.sd, 2)`). There was a great deal of variation in $a$ from population to population, below we plot these estimates.
+
+```{r, out.width='40%', fig.asp=1, echo=F, fig.cap="Add uncertainty in this figures. Intrinsic growth rate is exp(a). Estimates from model without any environmental covariates."}
+
+par(mar=c(8,4,1,1), mfrow=c(1,1))
+
+plot(sort(exp(aNoCov.vec)), pch=19, xaxt='n', xlab="", ylab="Intrinsic growth rate")
+lab <- routename.vec[sort(aNoCov.vec, index=TRUE)$ix]
+axis(1, at=1:15, labels=FALSE)
+text(x=1:15, y=par()$usr[3]-0.1*(par()$usr[4]-par()$usr[3]), labels=lab, srt=60, adj=1, xpd=TRUE)
+
+```
+
+There is quite a bit of variability here that we are unable to explain, we should think this over. We fit a model with covariates to and one without covariates. The difference in the DIC values between the models is `r round(dic.nocov - dic.PDSI, 1)` suggesting that including covariates leads to a more parsimonious description of the data.
+
+```{r, echo=F}
+
+dic.vec <- round(c(dic.NULL, dic.nocov, dic.PDSI, dic.PPT),2)
+pred.err <- round(c(sum(mse.NULLModel.holdout), sum(mse.nocovModel.holdout), sum(mse.PDSIModel.holdout), sum(mse.PPTModel.holdout)), 2)
+rsq.vec <- round(c(0, rsq.nocov, rsq.PDSI, rsq.PPT),2)
+names.vec <- c("Density indpendent", "Gompertz model", "Gompertz model + PDSI", "Gompertz model + PPT")
+dic.table <- data.frame(cbind("Model name"=names.vec, "DIC"=dic.vec, "R^2"=rsq.vec, "Average prediction error"=pred.err))
+dic.table[1,3] <- ""
+kable(dic.table, align="lccc", digits=2) %>% kable_styling()
+```
+
+Now we check the prediction error by holding out the last 30% of the observerations for each population, refitting the models,  then try to predict those missing observations. We calculated the average prediction error for each population as $\mathrm{Error}=1/n \sum_t^n \left| D_t - \hat{D}_t \right|$, where $\hat{D}_t$ is the estimate (mean population density) predicted in year $t$. The sum in this equation is over all the datapoints held out of the model fitting, a number that varies from popualtion to population. We will compare the predictions made by a model without covariates to one with covariates. Below are the errors for each populuation. 
+
+
+```{r,  out.width='100%', fig.asp=0.5, echo=F, fig.cap="Left panel: Prediction error in models with and without covariates. Values that are lower with covariates fall above the gray one-to-one line. Right panel:  Proportional changes in prediction error ((error with no covariates - error with covariates)/ error with no covariates) is positive if adding covariates reduces error. Values above the gray line have improved predictions when covariates are used."}
+#par(mfrow=c(1,2))
+#plot(mse.PDSIModel.holdout, mse.nocovModel.holdout, pch=19, xlab="Error with covariates", ylab="Error with no covariates", col="white")
+#abline(a=0, b=1, col="gray")
+#points(mse.PDSIModel.holdout, mse.nocovModel.holdout, pch=19, col="black")
+
+prop.change <- (mse.nocovModel.holdout - mse.PDSIModel.holdout)/mse.nocovModel.holdout
+
+plot(sort(prop.change, decreasing=T), pch=19, xaxt='n', xlab="", ylab="Change in prediction error", col="white")
+abline(a=0, b=0, col='gray')
+points(sort(prop.change, decreasing=T), pch=19, xaxt='n')
+lab <- routename.vec[sort(prop.change, decreasing=T, index=TRUE)$ix]
+axis(1, at=1:15, labels=FALSE)
+text(x=1:15, y=par()$usr[3]-0.1*(par()$usr[4]-par()$usr[3]), labels=lab, srt=60, adj=1, xpd=TRUE)
+
+```
+
+We found that the average decrease in error when covariates were added to the model was `r round(100*mean(prop.change), 0)`%, this is not very large but it varied widely from an increase in error of `r -round(100*range(prop.change)[1], 0)`% to a decrease in `r round(100*range(prop.change)[2], 0)`%. Cass Crow, Southern Pine, C St Louis, and Red Lake actually showed increases in prediction error when adding covariates. Kabetogama, Kooch North, and West Vermillion showed the greatest increase in predictabilty. Interestingly the Kabetogama and Kooch North populations had the highest intrinsic growth rates ($a$) as well, suggesting that these populations are the most reactive to environmental fluctuations. 
+
+
+```{r, echo=F}
+#cv.vec <- apply(Dens.mat, 2, sd, na.rm=T)/apply(Dens.mat, 2, mean, na.rm=T)
+
+#plot(sort(cv.vec), pch=19, xaxt='n', xlab="", ylab="Coefficient of variation", col="white")
+#points(sort(cv.vec), pch=19, xaxt='n')
+#lab <- routename.vec[sort(cv.vec, index=TRUE)$ix]
+#axis(1, at=1:15, labels=FALSE)
+#text(x=1:15, y=par()$usr[3]-0.1*(par()$usr[4]-par()$usr[3]), labels=lab, srt=60, adj=1, xpd=TRUE)
+```
+
+
+## Full-lag model
+```{r, echo=F}
+load('/home/troutinthemilk/Desktop/BeaverOutput/BeaverGomp_PDSI_AllLags_Holdout0.3.Rdata')
+pars.PDSIfullModel.holdout <- extractPars(jags.fit.summ)
+mse.PDSIfullModel.holdout  <- mse.calc(parList=pars.PDSIfullModel.holdout, X=log(Dens.mat), holdout.obs=holdout.obs, final.index=final.index)
+
+
+load('/home/troutinthemilk/Desktop/BeaverOutput/BeaverGomp_PDSI_AllLags_Holdout0.Rdata')
+pars.PDSIfullModel.holdout <- extractPars(jags.fit.summ)
+#aPDSI.vec <- pars.PDSIModel.holdout$a + pars.PDSIModel.holdout$aRE
+dic.fullPDSI            <- jags.fit$BUGSoutput$DIC
+Xpred.fullPDSI          <- Xpred
+jags.fit.mcmc.fullPDSI  <- jags.fit.mcmc
+envVars.fullPDSI        <- dimnames(EnvCov.array)[[2]]
+ss.fullPDSI             <- ss.calc(Xpred.fullPDSI, init.index)
+rsq.fullPDSI            <- 1 - sum(ss.fullPDSI)/sum(ss.NULL)
+
+
+sort.vec <- c(1,10,11,12,13,14,15,16,17,2,3,4,5,6,7,8,9)
+MCMCplot(jags.fit.mcmc.fullPDSI, labels=envVars.fullPDSI[sort.vec], params="betaEnv", main="PDSI environmental covariates", ref_ovl=TRUE)
+
+```
+
+The model with all lags has a of the same effects (- pdsi.fall lag 2 and 3), and a few new effects (- pdsi.grow lag 0), (+ pdsi.fall lag 0), and (- tmp.wint lag 0). Note that I forgot to include pdsi.spring in this one so will try that too. The large number of parameters leads to a slight decrease in our model performance (DIC=`r round(dic.fullPDSI,2)`, $R^2 =$ `r round(rsq.fullPDSI,2)`, prediction error =`r round(sum(mse.PDSIfullModel.holdout),2)`). Importantly there are no longer lags that are important where the shorter lags are not. It may be worth testing a set of lag 0 models as a simpler alternative to the current model.
+
+
+
+## Site-specific responses to environmental variables
+
+Here we estimate site-specific environmental effects to determine whether...
+```{r, echo=F}
+
+#This is just a brief comparision of the (nearly) full lag structure to our a-priori structure.
+load('/home/troutinthemilk/Desktop/BeaverOutput/BeaverGomp_PDSI_HierarchicalPostHocLimitedEnv_Holdout0.3.Rdata')
+pars.PDSIHierModel.holdout <- extractParsHier(jags.fit.summ)
+mse.PDSIHierModel.holdout  <- mseHier.calc(parList=pars.PDSIHierModel.holdout, X=log(Dens.mat), holdout.obs=holdout.obs, final.index=final.index)
+
+
+load('/home/troutinthemilk/Desktop/BeaverOutput/BeaverGomp_PDSI_HierarchicalPostHocLimitedEnv_Holdout0.Rdata')
+pars.PDSIHierModel      <- extractParsHier(jags.fit.summ)
+aPDSI.vec               <- pars.PDSIHierModel$a + pars.PDSIHierModel$aRE
+dic.HierPDSI            <- jags.fit$BUGSoutput$DIC
+Xpred.HierPDSI          <- Xpred
+jags.fit.mcmc.HierPDSI  <- jags.fit.mcmc
+envVars.HierPDSI        <- dimnames(EnvCov.array)[[2]]
+ss.HierPDSI             <- ss.calc(Xpred.HierPDSI, init.index)
+rsq.HierPDSI            <- 1 - sum(ss.HierPDSI)/sum(ss.NULL)
+
+
+#sort.vec <- c(1,10,11,12,2:9)
+#labels=envVars.HierPDSI[sort.vec]
+MCMCplot(jags.fit.mcmc.HierPDSI, params="betaEnv", main="PDSI environmental covariates", ref_ovl=TRUE)
+
+```
+
+
+```{r, out.width='100%', fig.asp=1.5, echo=F}
+
+par(mar=c(8,4,1,1), mfrow=c(3,3))
+
+for(i in 1:dim(pars.PDSIHierModel$betaRE)[1]) {
+  plot(pars.PDSIHierModel$betaRE[i,], pch=19, xaxt='n', xlab="", ylab="Random effect", col="white", main=dimnames(EnvCov.array)[[2]][i])
+  abline(a=0, b=0, col='gray')
+  points(pars.PDSIHierModel$betaRE[i,], pch=19, xaxt='n')
+  lab <- routename.vec
+  axis(1, at=1:15, labels=FALSE)
+  text(x=1:15, y=par()$usr[3]-0.1*(par()$usr[4]-par()$usr[3]), labels=lab, srt=60, adj=1, xpd=TRUE)
+}
+```
+
+The DIC value (`r round(dic.HierPDSI,2)`) ($R^2$ = `r round(rsq.HierPDSI,2)`) (average mean squared error = `r round(sum(mse.PDSIHierModel.holdout), 2)`) of this model is higher than without the random effects due to the large number of parameters. Probably should just explore this on a subset of the most important predictors from the first analysis. It would be nice to geographic locations to look for trends in winter temperatures. Also note that the random effect of quality doesn't vary much, except for the effect of Kabetogama.
+
+
+# LASSO and Ridge regression
+
+```{r, echo=F}
+load('/home/troutinthemilk/Desktop/BeaverOutput/BeaverGomp_AllVarsLASSO_Holdout0.3.Rdata')
+pars.fullModelLassoLag1.holdout <- extractPars(jags.fit.summ)
+mse.fullModelLassoLag1.holdout  <- mse.calc(parList=pars.fullModelLassoLag1.holdout, X=log(Dens.mat), holdout.obs=holdout.obs, final.index=final.index)
+par(mfrow=c(1,2))
+MCMCplot(jags.fit, params="betaEnv", main="LASSO regression", ref_ovl=TRUE)
+
+
+load('/home/troutinthemilk/Desktop/BeaverOutput/BeaverGomp_AllVarsRidge_Holdout0.3.Rdata')
+pars.fullModelRidgeLag1.holdout <- extractPars(jags.fit.summ)
+mse.fullModelRidgeLag1.holdout  <- mse.calc(parList=pars.fullModelRidgeLag1.holdout, X=log(Dens.mat), holdout.obs=holdout.obs, final.index=final.index)
+
+
+MCMCplot(jags.fit, params="betaEnv", main="Ridge regression", ref_ovl=TRUE)
+
+```
+
+The total square error of Ridge regression `r round(sum(mse.fullModelRidgeLag1.holdout),2)`.
+
+The total square error of LASSO is `r round(sum(mse.fullModelLassoLag1.holdout),2)`.

@@ -1,0 +1,63 @@
+---
+title: "Season 2: Exploratory analysis"
+author: "Jake Ferguson"
+date: "July 31, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(Distance)
+library(mrds)
+library(dplyr)
+library(dsm)
+require(pscl)
+library(lubridate)
+library(googlesheets)
+library(plotrix)
+library(ggplot2)
+library(gridExtra)
+library(readxl)
+
+source('ZebraFuncs.R')
+
+curr.lake   <- c("Lake Burgan", "Little Birch Lake", "Lake Florida")
+curr.lake2  <- c("Burgan", "Little Birch Lake", "Florida") #"Burgan"
+
+index             <- 1
+if(!exists("LB.quadrat.est")) {
+LB.distance.est   <- distance.dens.est(curr.lake[index], curr.lake2[index])
+LB.double.est     <- double.dens.est(curr.lake[index], curr.lake2[index])
+LB.quadrat.est    <- quadrat.dens.est(curr.lake[index], curr.lake2[index])
+}
+
+index            <- 2
+if(!exists("LS.quadrat.est")) {
+LS.distance.est  <- distance.dens.est(curr.lake[index], curr.lake2[index])
+LS.double.est    <- double.dens.est(curr.lake[index], curr.lake2[index])
+LS.quadrat.est   <- quadrat.dens.est(curr.lake[index], curr.lake2[index])
+}
+
+index            <- 3
+if(!exists("LF.double.est")) {
+LF.distance.est  <- distance.dens.est(curr.lake[index], curr.lake2[index])
+LF.double.est    <- double.dens.est(curr.lake[index], curr.lake2[index])
+#LF.quadrat.est   <- quadrat.dens.est(curr.lake[index], curr.lake2[index])
+}
+
+time.df <- rbind(LB.distance.est$df, LB.double.est$df, LB.quadrat.est$df, LS.distance.est$df, LS.double.est$df, LS.quadrat.est$df, LF.distance.est$df, LF.double.est$df)#, LF.quadrat.est$df)
+
+```
+
+## Time budgets
+
+We are interested in how long it takes to do each task associated with the zebra mussel surveys. Below is the overall amount of time spent doing a given type of survey versus the amount of area that was actually covered.
+
+```{r}
+boxplot(Area/Time ~ Type, data=time.df, xlab="Survey type", ylab="Amount of area surveyed per second")
+
+```
+
+We see that the distance sampling is more efficient overall at covering area that the other types of survey. Given the high detection probalities in the double observer survey (if we trust them), however we could double the number of transects done by moving to a single observer design. 
+
+We can also look at the time spent on the setup, taking habitat data, and on recording the 

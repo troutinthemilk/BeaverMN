@@ -11,8 +11,8 @@ library(coda)
 
 curr.hyp		<- 'notall' #hypotheses as denoted by sean
 SS 				<- F
-PDSI 			<- T
-holdout.prop	<- 0.5 #0.25
+PDSI 			<- F
+holdout.prop	<- 0.3 #0.25
 
 ##hypotheses specified by sean
 #1. Dispersal @2y/o; winter affects reproduction; rainfall/May temp affects reproduction.
@@ -28,7 +28,7 @@ holdout.prop	<- 0.5 #0.25
 
 colony.dat 		<- as.data.frame(read_excel("../Data/Annual_census_5.31.18.xlsx", sheet=1, na="NA"))
 #colony.dat 		<- as.data.frame(read_excel("../Data/Annual_census_4.9.18.xlsx", sheet=1, na="NA"))
-envvars.dat 	<- as.data.frame(read_excel("../Data/Annual_census_5.31.18.xlsx", sheet=2, na="NA"))[,-c(1,4)]
+envvars.dat 	<- as.data.frame(read_excel("../Data/Annual_census_5.31.18.xlsx", sheet=2, na="NA"))[,-c(1,5)]
 habvars.dat 	<- as.data.frame(read_excel("../Data/Annual_census_5.31.18.xlsx", sheet=3, na="NA"))
 
 routename.vec   <- c("Blackduck", "Cass",  "Cass_crow", "C_st_louis", "Ely_finger", "Hay_kelliher", "Itasca", "Kabetogama", "Kanabec", "Kawishiwi", "Kooch_north", "Northome", "Red_lake", "Southern_pine", "West_vermillion") #removed S_st_louis
@@ -58,20 +58,12 @@ if(curr.hyp=="all")
 	}
 
 }
-lag.vals		<- switch(curr.hyp, "1"=c(1,2,3,3,0,3,0), "2"=c(1,0,3,3,0,3,0), "3"=c(1,2,2,2,0,2,0), "4"=c(1,0,2,2,0,2,0), "all"=c(1, 0,1,2, 1,2,3, 0,1,2,3, 0,1,2,3, 0, 0), "notall"=c(1, 0,2, 2,3, 2,3, 2,3, 0, 0)) 
+
+lag.vals		<- switch(curr.hyp, "1"=c(1,2,3,3,0,3,0), "2"=c(1,0,3,3,0,3,0), "3"=c(1,2,2,2,0,2,0), "4"=c(1,0,2,2,0,2,0), "all"=c(1, 0,1,2, 1,2,3, 0,1,2,3, 0,1,2,3, 0, 0, 0), "notall"=c(1, 0,2, 2,3, 2,3, 2,3, 0, 0, 0)) 
 
 envvars.dat		<- envvars.dat[, c(1,2,curr.ind)]
 envvars.dat		<- cbind(envvars.dat, Quality=rep(habvars.dat$Quality, each=31))
 envvars.dat 	<- cbind(envvars.dat[,1:2], scale(envvars.dat[,-(1:2)]))
-
-#need to keep track of how to incude pc1 and vehicle density.
-#envvars.dat[,3] <- envvars.dat[,3]*rep(habvars.dat$veh.dens, each=31)
-#envvars.dat[,8] <- envvars.dat[,8]*pc1.vec
-#envvars.dat[,9] <- envvars.dat[,9]*pc1.vec
-#envvars.dat[,10] <- envvars.dat[,10]*pc1.vec
-#envvars.dat[,11] <- envvars.dat[,11]*pc1.vec
-
-#envvars.dat		<- cbind(envvars.dat, PC1=pc1.vec, Quality=rep(habvars.dat$Quality, each=31))
 
 year.min	<- min(colony.dat$year)
 year.max 	<- max(colony.dat$year)
@@ -104,7 +96,6 @@ obsna.mat	 <- densnotna.mat <- matrix(NA, 30, length(routename.vec))#store indic
 obsna.length <- densnotna.length <- holdout.obs <- vector('numeric', length(routename.vec))
 
 ##format input datasets for the jags model
-
 for(i in 1:length(routename.vec)) {
 
 	currCol 		<- colony.dat[which(colony.dat$rte.name == routename.vec[i]),]
@@ -165,7 +156,12 @@ for(i in 1:length(routename.vec)) {
 }
 
 #now add in wolf covariate
-EnvCov.array[,dim(EnvCov.array)[2],] <- Wolf.mat
+EnvCov.array[,dim(EnvCov.array)[2],] <- (Wolf.mat - mean(Wolf.mat, na.rm=T))/sd(Wolf.mat, na.rm=T)
+
+#scale covariates
+for(i in 1:dim(EnvCov.array)[2]) {
+	EnvCov.array[,2,] <- (EnvCov.array[,2,] - mean(EnvCov.array[,2,], na.rm=T))/sd(EnvCov.array[,2,], na.rm=T)
+}
 
 size.mat <- observCov.mat
 size.mat[which(observCov.mat==0)] <- 1
@@ -275,9 +271,9 @@ MCMCplot(jags.fit.mcmc, params="betaEnv", main="Environmental covariates", ref_o
 #if(SS) {
 	if(PDSI) {
 		#next()
-		save.image(file=paste("BeaverGompSS_QuarterHoldout_PDSI_Holdout", holdout.prop, ".Rdata", sep=''))
+		save.image(file=paste("BeaverGomp_PDSI_Holdout", holdout.prop, ".Rdata", sep=''))
 	} else {
-		#save.image(file=paste("BeaverGompSS_QuarterHoldout_PPT_", curr.hyp, ".Rdata", sep=''))
+		save.image(file=paste("BeaverGomp_PPT_Holdout", holdout.prop, ".Rdata", sep=''))
 	}
 # else {
 	#save.image(file=paste("BeaverGomp_Hyp", curr.hyp, ".Rdata", sep=''))
@@ -331,16 +327,3 @@ for(i in 1:15) {
 
 	mse.vec[i] <- mean(abs(X[holdout.indices][-1] - pred.val[-1]), na.rm=T)
 }
-
-
-#no state-space model
-#no cov mean(mse.vec) = 0.2424127
-#lag 0 mean(mse.vec) = 0.2251269
-#lag 1 mean(mse.vec) =  0.2252731
-#lag 2 mean(mse.vec) = 0.2121801
-#lag 1,2 mean(mse.vec) = 0.2153151
-#lag 0,2 mean(mse.vec) = 
-#lag 2 mean(mse.vec), lasso = 0.2296801
-#lag 2 mean(mse.vec), ridge = 
-#PDSI mean(mse.vec) = 0.2076699, -13.83146
-#PPT mean(mse.vec) = 0.231497, -2.482535

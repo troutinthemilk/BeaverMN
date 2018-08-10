@@ -3,6 +3,7 @@
 model {
 
 	for(i in 1:NumPops) {
+		
 		#generate unobserved true states (Xtrue)
 		Xpred[init.index[i], i] 	<- lD[init.index[i],i] 
 		for(j in (init.index[i]+1):(final.index[i]-holdout.obs[i])) {
@@ -10,6 +11,7 @@ model {
 			
 			lD[j, i] 	~  dnorm(Xpred[j, i], tauProc[i]) 
 		}
+		
 	}
 
 	#these are the priors
@@ -18,19 +20,24 @@ model {
 	
 	#random effects in density dependence
 	for(i in 1:NumPops) {
-		aRE[i] 			~ dnorm(0, 1/sigmaInt^2)   #dunif(-4, 2)
+		aRE[i] 			~ dnorm(0, tauInt)   #dunif(-4, 2)
 	}
 
-	sigmaInt 	~ dgamma(0.1, 0.1)
-	
+	#tauInt 	~ dgamma(2, 1)
+	tauInt <- pow(sigmaInt, -2)
+	sigmaInt ~ dunif(0, 20)
+
 	for(i in 1:NumPops) {
-		tauProc[i] 		~ dgamma(0.01, 0.01)
+		#tauProc[i] 		~ dgamma(2, 1)
+		tauProc[i] <- pow(sigmaProc[i], -2)
+		sigmaProc[i] ~ dunif(0, 20)
 	}
 
+	lambdaEnv ~ dunif(0.001, 1e3) #dgamma(0.1, 0.1)
 	for(i in 1:NumEnvVars) {
-		tauPrior[i]	~ dgamma(0.01, 0.01)
+		tauPrior[i]	~ dgamma(0.1, 0.1)
 		betaEnv[i]  ~ dnorm(0, tauPrior[i])
-
+		#betaEnv[i] ~ dnorm(0, 0.1)
 		#betaEnv[i] ~ ddexp(0, tauPrior[i]) #added offset to prevent numerical error
 		#betaEnv[i] ~ ddexp(0, lambdaEnv)
 		#betaEnv[i] ~ dnorm(0, lambdaEnv)
